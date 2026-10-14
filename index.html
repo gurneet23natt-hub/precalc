@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
-/* Layout: graph-paper desk. Filters across the top, one question card in focus, a progress ledger to its right (stacked below on phones). */
+/* Layout: graph-paper desk. Settings and topic picker across the top, one question card in focus, progress and sharing to its right (stacked below on phones). */
 :root {
   --paper: #f3f6fa;
   --grid: #dde5ef;
@@ -19,6 +19,7 @@
   --line: #c9d4e2;
   --accent: #2448c9;
   --accent-soft: #e4eafc;
+  --on-accent: #ffffff;
   --good: #137a4b;
   --good-soft: #e1f4ea;
   --bad: #b3261e;
@@ -30,16 +31,17 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --paper: #0f1522; --grid: #1a2335; --card: #161f30; --ink: #e6ecf6; --muted: #98a6bd;
-    --line: #2c3a52; --accent: #8aa6ff; --accent-soft: #1e2a4c; --good: #5fd39a; --good-soft: #13301f;
+    --line: #2c3a52; --accent: #8aa6ff; --accent-soft: #1e2a4c; --on-accent: #0f1522; --good: #5fd39a; --good-soft: #13301f;
     --bad: #ff8a80; --bad-soft: #3a1a1a; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --paper: #0f1522; --grid: #1a2335; --card: #161f30; --ink: #e6ecf6; --muted: #98a6bd;
-  --line: #2c3a52; --accent: #8aa6ff; --accent-soft: #1e2a4c; --good: #5fd39a; --good-soft: #13301f;
+  --line: #2c3a52; --accent: #8aa6ff; --accent-soft: #1e2a4c; --on-accent: #0f1522; --good: #5fd39a; --good-soft: #13301f;
   --bad: #ff8a80; --bad-soft: #3a1a1a; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background-color: var(--paper);
@@ -59,37 +61,63 @@ body {
   display: grid;
   gap: 20px;
 }
-header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
 h1 {
   font-family: var(--f-display); font-weight: 800; font-size: clamp(2rem, 5vw, 3rem);
   line-height: 1; margin: 0; letter-spacing: -0.02em; text-wrap: balance;
 }
 h1 .fx { font-family: var(--f-math); font-style: italic; font-weight: 400; color: var(--accent); }
-.tag { margin: 6px 0 0; color: var(--muted); max-width: 60ch; }
+.tag { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
 .eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 
-.controls {
-  display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: start;
-  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
-}
+.settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; display: grid; }
+.controls { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: end; padding: 14px 16px; }
 .group { display: grid; gap: 6px; min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   font: inherit; font-size: .9rem; cursor: pointer; border: 1px solid var(--line); background: transparent;
   color: var(--ink); padding: 5px 12px; border-radius: 999px;
 }
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--card); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .chip:hover { border-color: var(--accent); }
 .btn {
   font: inherit; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 9px 18px;
-  border: 1px solid var(--accent); background: var(--accent); color: var(--card);
+  border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent);
 }
 .btn.ghost { background: transparent; color: var(--accent); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.small-btn { padding: 5px 12px; font-size: .85rem; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
-@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+/* Topic picker */
+.topics-wrap { border-top: 1px solid var(--line); padding: 14px 16px 16px; display: grid; gap: 12px; }
+.topics-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; cursor: pointer; list-style: none; }
+.topics-head::-webkit-details-marker { display: none; }
+.topics-head::before { content: "▸"; color: var(--muted); transition: transform .15s; display: inline-block; }
+.topics-wrap[open] > .topics-head::before { transform: rotate(90deg); }
+.topics-wrap:not([open]) { padding-bottom: 14px; }
+.topics-head .status { font-size: .9rem; font-weight: 700; }
+.topics-tools { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.topics-tools .help { font-size: .85rem; color: var(--muted); margin: 0; flex: 1 1 320px; }
+.topics { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px 22px; }
+.tcol { display: grid; gap: 2px; align-content: start; min-width: 0; }
+.tcol h3 { font-family: var(--f-display); font-size: .95rem; margin: 0 0 4px; }
+.trow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 8px; }
+.trow:hover { background: var(--accent-soft); }
+.trow input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+.trow label { display: grid; cursor: pointer; min-width: 0; }
+.trow .tname { font-size: .92rem; }
+.trow .tmeta { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trow.locked .tname { color: var(--muted); text-decoration: line-through; }
+.trow.locked input, .trow.locked label { cursor: not-allowed; }
+.lockbtn {
+  width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted);
+}
+.lockbtn:hover { border-color: var(--accent); color: var(--accent); }
+.lockbtn[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--card); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+@media (max-width: 880px) { .main { grid-template-columns: minmax(0, 1fr); } }
 
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
@@ -104,8 +132,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .bar > span { display: block; height: 100%; background: var(--accent); transition: width .3s; }
 
 .question { font-family: var(--f-math); font-size: 1.28rem; line-height: 1.5; margin: 0; }
-.m { font-family: var(--f-math); white-space: nowrap; }
-.question i, .choice i, .explain i, .m i { font-family: var(--f-math); }
+.m { font-family: var(--f-math); }
+.question i, .choice i, .explain i, .step i, .m i { font-family: var(--f-math); }
 .choices { display: grid; gap: 10px; }
 .choice {
   display: flex; gap: 14px; align-items: baseline; text-align: left; width: 100%;
@@ -131,12 +159,47 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .hint { font-size: .82rem; color: var(--muted); }
 kbd { font: .78rem var(--f-ui); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
 
-.side { display: grid; gap: 16px; }
-.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; }
+/* Step-by-step hint */
+.hintbtn { justify-self: start; display: inline-flex; align-items: center; gap: 8px; }
+.hintbtn span { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid currentColor; display: grid; place-items: center; font-size: .8rem; }
+.stepper { border: 1px dashed var(--accent); border-radius: 10px; padding: 14px 16px; display: grid; gap: 12px; background: var(--paper); }
+.stephead { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.steplist { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; }
+.step > div { display: grid; gap: 8px; min-width: 0; }
+.step p { margin: 0; }
+.snum {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: .85rem;
+  border: 1px solid var(--accent); color: var(--accent); background: var(--card);
+}
+.step.done .snum { background: var(--good); border-color: var(--good); color: var(--card); }
+.step.done > div > p:first-child { color: var(--muted); font-size: .92rem; }
+.sans { font-size: .92rem; color: var(--good); font-weight: 700; }
+.sans.shown { color: var(--muted); }
+.sform { display: flex; flex-wrap: wrap; gap: 8px; }
+.sform input {
+  flex: 1 1 200px; min-width: 0; font: 1.05rem var(--f-math); color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+}
+.sopts { display: flex; flex-wrap: wrap; gap: 8px; }
+.sopt {
+  font: 1rem var(--f-math); cursor: pointer; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px;
+}
+.sopt:hover { border-color: var(--accent); background: var(--accent-soft); }
+.smsg { font-size: .9rem; }
+.smsg.bad { color: var(--bad); }
+.smsg.info { color: var(--muted); }
+.shint { font-size: .92rem; background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; }
+.srow { display: flex; flex-wrap: wrap; gap: 16px; }
+
+.side { display: grid; gap: 16px; min-width: 0; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
 .panel h2 { font-family: var(--f-display); font-size: 1.1rem; margin: 0; }
+.panel h3 { font-family: var(--f-display); font-size: 1rem; margin: 0; }
 .unit-row { display: grid; gap: 4px; }
 .unit-row .top { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; }
-.unit-row .num { font-variant-numeric: tabular-nums; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; color: var(--muted); }
 .meter { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
 .meter span { display: block; height: 100%; background: var(--good); }
 .session-score { font-family: var(--f-display); font-size: 2.2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -144,40 +207,70 @@ kbd { font: .78rem var(--f-ui); border: 1px solid var(--line); border-bottom-wid
 .linkbtn { font: inherit; font-size: .85rem; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; justify-self: start; }
 .confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .85rem; }
 
+/* Sharing */
+#reportBox {
+  width: 100%; min-height: 150px; resize: vertical; font: .82rem/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+}
+.board { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; }
+.blist { display: grid; gap: 10px; }
+.brow { display: grid; grid-template-columns: 18px 28px minmax(0, 1fr); gap: 10px; align-items: center; }
+.brank { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; text-align: right; }
+.bav { width: 28px; height: 28px; border-radius: 50%; background: var(--grid); }
+.bmain { display: grid; gap: 3px; min-width: 0; }
+.btop { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; }
+.bname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow.me .bname { font-weight: 700; }
+.bsub { font-size: .75rem; color: var(--muted); }
+
+.summary { display: grid; gap: 16px; }
 .summary h2 { font-family: var(--f-display); font-size: 1.8rem; margin: 0; text-wrap: balance; }
+.review { display: grid; gap: 8px; }
 .missed-list { margin: 0; padding-left: 1.2em; display: grid; gap: 10px; }
 .missed-list li { font-family: var(--f-math); }
 .missed-list .ans { display: block; font-family: var(--f-ui); font-size: .9rem; color: var(--good); }
 footer { color: var(--muted); font-size: .82rem; }
-@media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .bar > span, .topics-head::before { transition: none; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div>
-      <div class="eyebrow">AP Precalculus · Units 1–4</div>
-      <h1>Precalc Practice <span class="fx">f(x)</span> Room</h1>
-      <p class="tag">Multiple-choice questions in the style of the AP exam, with a worked explanation after every answer.</p>
-    </div>
+    <div class="eyebrow">AP Precalculus · Units 1–3</div>
+    <h1>Precalc Practice <span class="fx">f(x)</span> Room</h1>
+    <p class="tag">Multiple-choice questions on everything the AP exam tests. Stuck? Open the hint to work through the problem one step at a time.</p>
   </header>
 
-  <section class="controls" aria-label="Practice settings">
-    <div class="group">
-      <span class="eyebrow">Units</span>
-      <div class="chips" id="unitChips"></div>
+  <section class="settings" aria-label="Practice settings">
+    <div class="controls">
+      <div class="group">
+        <span class="eyebrow">Units</span>
+        <div class="chips" id="unitChips"></div>
+      </div>
+      <div class="group">
+        <span class="eyebrow">Calculator</span>
+        <div class="chips" id="calcChips"></div>
+      </div>
+      <div class="group">
+        <span class="eyebrow">Set length</span>
+        <div class="chips" id="lenChips"></div>
+      </div>
+      <div class="group">
+        <button class="btn" id="startBtn" type="button">Start new set</button>
+      </div>
     </div>
-    <div class="group">
-      <span class="eyebrow">Calculator</span>
-      <div class="chips" id="calcChips"></div>
-    </div>
-    <div class="group">
-      <span class="eyebrow">Set length</span>
-      <div class="chips" id="lenChips"></div>
-    </div>
-    <div class="group" style="align-self:end">
-      <button class="btn" id="startBtn" type="button">Start new set</button>
-    </div>
+    <details class="topics-wrap" id="topicsBox" open>
+      <summary class="topics-head">
+        <span class="eyebrow">Topics</span>
+        <span class="status" id="topicStatus"></span>
+      </summary>
+      <div class="topics-tools">
+        <p class="help">Check topics to practice only those. Lock a topic to keep it out of your sets until you unlock it. Changes apply when you start a new set.</p>
+        <button class="linkbtn" type="button" id="clearFocus" hidden>Clear focus</button>
+        <button class="linkbtn" type="button" id="unlockAll" hidden>Unlock all</button>
+      </div>
+      <div class="topics" id="topicGrid"></div>
+    </details>
   </section>
 
   <div class="main">
@@ -191,526 +284,35 @@ footer { color: var(--muted); font-size: .82rem; }
       </div>
       <div class="panel">
         <h2>Your progress</h2>
-        <p class="small">Share of each unit's questions you have answered correctly at least once. Saved in this browser.</p>
+        <p class="small">Questions in each unit you have answered correctly at least once. Saved in this browser.</p>
         <div id="mastery" style="display:grid;gap:12px"></div>
         <div id="resetArea"></div>
+      </div>
+      <div class="panel" id="sharePanel">
+        <h2>Share progress</h2>
+        <p class="small" id="shareSummary"></p>
+        <p class="small">Copy a report to send to a teacher, tutor, or study group. It lists your scores by unit and your strongest and weakest topics.</p>
+        <button class="btn ghost" type="button" id="copyReport">Copy progress report</button>
+        <p class="small" id="copyMsg" role="status"></p>
+        <textarea id="reportBox" readonly hidden aria-label="Progress report"></textarea>
+        <div class="board" id="board" hidden>
+          <h3>Class board</h3>
+          <p class="small">Post your progress so everyone who opens this page can see how the class is doing.</p>
+          <div class="blist" id="boardList"><p class="small">Loading the board…</p></div>
+          <div class="actions">
+            <button class="btn small-btn" type="button" id="postBtn">Post my progress</button>
+            <button class="linkbtn" type="button" id="removePost" hidden>Remove my post</button>
+          </div>
+          <p class="small" id="boardMsg" role="status"></p>
+        </div>
       </div>
     </aside>
   </div>
 
-  <footer>Units 1–3 are assessed on the AP Precalculus exam; Unit 4 is taught in the course but not tested. Questions marked “Calculator” are best done with a graphing calculator, like Part B of each exam section.</footer>
+  <footer>Covers Units 1–3 of AP Precalculus, the units assessed on the AP exam. Questions marked “Calculator” are meant for a graphing calculator, like Part B of each exam section.</footer>
 </div>
 
-<script>
-// Each question: u = unit, t = topic, calc = graphing calculator recommended,
-// q = prompt (HTML), c = choices (HTML; the FIRST choice is the correct one, order is shuffled at runtime), e = explanation.
-const UNITS = {
-  1: "Polynomial & Rational",
-  2: "Exponential & Logarithmic",
-  3: "Trigonometric & Polar",
-  4: "Parameters, Vectors & Matrices"
-};
-
-const BANK = [
-  // ---------- Unit 1 ----------
-  { u:1, t:"Rational functions", calc:false,
-    q:"Let <span class='m'><i>f</i>(<i>x</i>) = (<i>x</i>² − 9) / (<i>x</i>² − <i>x</i> − 6)</span>. Which describes the graph of <i>f</i> at <i>x</i> = 3?",
-    c:["A hole at (3, 6/5)","A vertical asymptote at <i>x</i> = 3","A zero at <i>x</i> = 3","A hole at (3, 0)"],
-    e:"Factor: (<i>x</i> − 3)(<i>x</i> + 3) / [(<i>x</i> − 3)(<i>x</i> + 2)]. The factor (<i>x</i> − 3) cancels, so there is a hole. The simplified function (<i>x</i> + 3)/(<i>x</i> + 2) equals 6/5 at <i>x</i> = 3." },
-  { u:1, t:"End behavior", calc:false,
-    q:"For <span class='m'><i>f</i>(<i>x</i>) = −2<i>x</i>⁵ + 3<i>x</i>² − 1</span>, which describes the end behavior?",
-    c:["As <i>x</i> → ∞, <i>f</i>(<i>x</i>) → −∞; as <i>x</i> → −∞, <i>f</i>(<i>x</i>) → ∞",
-       "As <i>x</i> → ∞, <i>f</i>(<i>x</i>) → ∞; as <i>x</i> → −∞, <i>f</i>(<i>x</i>) → −∞",
-       "As <i>x</i> → ±∞, <i>f</i>(<i>x</i>) → −∞",
-       "As <i>x</i> → ±∞, <i>f</i>(<i>x</i>) → ∞"],
-    e:"The leading term −2<i>x</i>⁵ controls end behavior. Odd degree with a negative leading coefficient: the graph rises to the left and falls to the right." },
-  { u:1, t:"Rational functions", calc:false,
-    q:"What is the horizontal asymptote of <span class='m'><i>g</i>(<i>x</i>) = (3<i>x</i>² + 1) / (5 − 2<i>x</i>²)</span>?",
-    c:["<i>y</i> = −3/2","<i>y</i> = 3/5","<i>y</i> = 3/2","<i>y</i> = 0"],
-    e:"Numerator and denominator have the same degree, so the asymptote is the ratio of leading coefficients: 3 / (−2) = −3/2." },
-  { u:1, t:"Rates of change", calc:false,
-    q:"What is the average rate of change of <span class='m'><i>f</i>(<i>x</i>) = <i>x</i>³ − 2<i>x</i></span> on the interval [1, 3]?",
-    c:["11","10","22","7"],
-    e:"<i>f</i>(3) = 27 − 6 = 21 and <i>f</i>(1) = 1 − 2 = −1. Average rate of change = (21 − (−1)) / (3 − 1) = 22/2 = 11." },
-  { u:1, t:"Polynomial zeros", calc:false,
-    q:"A polynomial <i>p</i> has a zero of multiplicity 2 at <i>x</i> = 2. What does the graph of <i>p</i> do at <i>x</i> = 2?",
-    c:["Touches the <i>x</i>-axis without crossing it","Crosses the <i>x</i>-axis","Has a vertical asymptote","Has a hole"],
-    e:"An even multiplicity means the factor (<i>x</i> − 2)² does not change sign, so the graph touches the axis and turns around." },
-  { u:1, t:"Rational functions", calc:false,
-    q:"What is the slant (oblique) asymptote of <span class='m'><i>h</i>(<i>x</i>) = (<i>x</i>² + 3<i>x</i> + 1) / (<i>x</i> − 1)</span>?",
-    c:["<i>y</i> = <i>x</i> + 4","<i>y</i> = <i>x</i> + 3","<i>y</i> = <i>x</i> + 2","<i>y</i> = <i>x</i>"],
-    e:"Long division gives <i>x</i> + 4 with remainder 5, so <i>h</i>(<i>x</i>) = <i>x</i> + 4 + 5/(<i>x</i> − 1). As |<i>x</i>| grows, the remainder term goes to 0." },
-  { u:1, t:"Complex zeros", calc:false,
-    q:"A polynomial with real coefficients has zeros 3 and 2<i>i</i>. Which must also be a zero?",
-    c:["−2<i>i</i>","−3","2","3<i>i</i>"],
-    e:"Non-real zeros of polynomials with real coefficients come in conjugate pairs, so −2<i>i</i> must be a zero." },
-  { u:1, t:"Rational inequalities", calc:false,
-    q:"Solve <span class='m'>(<i>x</i> + 2) / (<i>x</i> − 3) ≥ 0</span>.",
-    c:["<i>x</i> ≤ −2 or <i>x</i> &gt; 3","−2 ≤ <i>x</i> &lt; 3","<i>x</i> ≤ −2 or <i>x</i> ≥ 3","<i>x</i> &lt; −2 or <i>x</i> &gt; 3"],
-    e:"Critical values are −2 (numerator zero, included) and 3 (denominator zero, excluded). Testing intervals, the expression is positive for <i>x</i> &lt; −2 and <i>x</i> &gt; 3." },
-  { u:1, t:"Modeling", calc:false,
-    q:"For equally spaced inputs <i>x</i> = 0, 1, 2, 3, 4 the outputs are 3, 5, 9, 15, 23. Which type of function best models the data?",
-    c:["Quadratic","Linear","Exponential","Cubic"],
-    e:"First differences: 2, 4, 6, 8. Second differences: 2, 2, 2. Constant second differences over equal input steps indicate a quadratic." },
-  { u:1, t:"Inverse functions", calc:false,
-    q:"If <span class='m'><i>f</i>(<i>x</i>) = (2<i>x</i> + 1) / (<i>x</i> − 3)</span>, what is <i>f</i>⁻¹(<i>x</i>)?",
-    c:["(3<i>x</i> + 1) / (<i>x</i> − 2)","(<i>x</i> − 3) / (2<i>x</i> + 1)","(3<i>x</i> − 1) / (<i>x</i> + 2)","(<i>x</i> + 1) / (2<i>x</i> − 3)"],
-    e:"Swap and solve: <i>x</i> = (2<i>y</i> + 1)/(<i>y</i> − 3) ⇒ <i>xy</i> − 3<i>x</i> = 2<i>y</i> + 1 ⇒ <i>y</i>(<i>x</i> − 2) = 3<i>x</i> + 1 ⇒ <i>y</i> = (3<i>x</i> + 1)/(<i>x</i> − 2)." },
-  { u:1, t:"Transformations", calc:false,
-    q:"The point (4, 5) is on the graph of <i>f</i>. Which point must be on the graph of <span class='m'><i>g</i>(<i>x</i>) = 3<i>f</i>(<i>x</i> − 2) + 1</span>?",
-    c:["(6, 16)","(2, 16)","(6, 15)","(2, 18)"],
-    e:"Shift right 2: <i>x</i> = 4 + 2 = 6. Vertical dilation by 3 then up 1: 3·5 + 1 = 16." },
-  { u:1, t:"Function symmetry", calc:false,
-    q:"Which function is even?",
-    c:["<i>f</i>(<i>x</i>) = <i>x</i>⁴ − 3<i>x</i>² + 2","<i>f</i>(<i>x</i>) = <i>x</i>³ − <i>x</i>","<i>f</i>(<i>x</i>) = <i>x</i>² + <i>x</i>","<i>f</i>(<i>x</i>) = (<i>x</i> − 1)²"],
-    e:"An even function satisfies <i>f</i>(−<i>x</i>) = <i>f</i>(<i>x</i>). Only even powers of <i>x</i> appear in <i>x</i>⁴ − 3<i>x</i>² + 2, so it is unchanged when <i>x</i> is replaced by −<i>x</i>." },
-  { u:1, t:"Composition", calc:false,
-    q:"If <span class='m'><i>f</i>(<i>x</i>) = <i>x</i>² + 1</span> and <span class='m'><i>g</i>(<i>x</i>) = 2<i>x</i> − 3</span>, what is <i>f</i>(<i>g</i>(2))?",
-    c:["2","5","7","10"],
-    e:"<i>g</i>(2) = 4 − 3 = 1, then <i>f</i>(1) = 1 + 1 = 2." },
-  { u:1, t:"Rates of change", calc:false,
-    q:"On an interval, <i>f</i> is increasing, and its average rates of change over consecutive equal-length subintervals are decreasing. Which describes <i>f</i> on that interval?",
-    c:["Increasing and concave down","Increasing and concave up","Decreasing and concave down","Decreasing and concave up"],
-    e:"Positive rates of change mean increasing. Rates of change that decrease mean the graph bends downward, which is concave down." },
-  { u:1, t:"Binomial theorem", calc:false,
-    q:"What is the coefficient of <i>x</i>² in the expansion of <span class='m'>(<i>x</i> + 2)⁵</span>?",
-    c:["80","40","10","32"],
-    e:"The <i>x</i>² term is C(5, 2)·<i>x</i>²·2³ = 10 · 8 · <i>x</i>² = 80<i>x</i>²." },
-  { u:1, t:"Polynomial division", calc:false,
-    q:"What is the remainder when <span class='m'><i>x</i>³ − 4<i>x</i> + 5</span> is divided by <span class='m'><i>x</i> − 2</span>?",
-    c:["5","0","−3","13"],
-    e:"By the Remainder Theorem the remainder is <i>p</i>(2) = 8 − 8 + 5 = 5." },
-  { u:1, t:"Polynomial zeros", calc:true,
-    q:"How many real zeros does <span class='m'><i>p</i>(<i>x</i>) = <i>x</i>⁴ − 5<i>x</i>² + <i>x</i> + 2</span> have?",
-    c:["4","2","3","0"],
-    e:"Graph it: <i>p</i>(−3) = 35 &gt; 0, <i>p</i>(−1) = −3 &lt; 0, <i>p</i>(0) = 2 &gt; 0, <i>p</i>(1) = −1 &lt; 0, <i>p</i>(3) = 41 &gt; 0. Four sign changes give four real zeros." },
-  { u:1, t:"Modeling", calc:true,
-    q:"A box with no lid is made from a 20 cm by 20 cm sheet by cutting squares of side <i>x</i> from each corner. Its volume is <span class='m'><i>V</i>(<i>x</i>) = <i>x</i>(20 − 2<i>x</i>)²</span>. To the nearest tenth, what value of <i>x</i> maximizes the volume?",
-    c:["3.3","5.0","2.5","10.0"],
-    e:"Graph <i>V</i> on 0 &lt; <i>x</i> &lt; 10 and find the maximum: <i>x</i> = 10/3 ≈ 3.3 cm, giving a volume of about 592.6 cm³." },
-
-  // ---------- Unit 2 ----------
-  { u:2, t:"Arithmetic sequences", calc:false,
-    q:"An arithmetic sequence has <span class='m'><i>a</i><sub>1</sub> = 7</span> and common difference −3. What is <span class='m'><i>a</i><sub>10</sub></span>?",
-    c:["−20","−23","−17","37"],
-    e:"<i>a</i><sub><i>n</i></sub> = <i>a</i><sub>1</sub> + (<i>n</i> − 1)<i>d</i> = 7 + 9(−3) = −20." },
-  { u:2, t:"Geometric sequences", calc:false,
-    q:"A geometric sequence has <span class='m'><i>a</i><sub>2</sub> = 6</span> and <span class='m'><i>a</i><sub>5</sub> = 162</span>. What is <span class='m'><i>a</i><sub>7</sub></span>?",
-    c:["1458","486","4374","972"],
-    e:"<i>a</i><sub>5</sub> / <i>a</i><sub>2</sub> = <i>r</i>³ = 27, so <i>r</i> = 3. Then <i>a</i><sub>7</sub> = <i>a</i><sub>5</sub> · <i>r</i>² = 162 · 9 = 1458." },
-  { u:2, t:"Logarithmic equations", calc:false,
-    q:"Solve <span class='m'>log<sub>2</sub>(<i>x</i>) + log<sub>2</sub>(<i>x</i> − 2) = 3</span>.",
-    c:["<i>x</i> = 4","<i>x</i> = 4 or <i>x</i> = −2","<i>x</i> = 5","<i>x</i> = 2"],
-    e:"Combine: log<sub>2</sub>(<i>x</i>(<i>x</i> − 2)) = 3, so <i>x</i>² − 2<i>x</i> = 8 and (<i>x</i> − 4)(<i>x</i> + 2) = 0. <i>x</i> = −2 is outside the domain, leaving <i>x</i> = 4." },
-  { u:2, t:"Exponential equations", calc:false,
-    q:"Solve <span class='m'>3<sup>2<i>x</i> − 1</sup> = 27</span>.",
-    c:["<i>x</i> = 2","<i>x</i> = 1","<i>x</i> = 3/2","<i>x</i> = 14"],
-    e:"27 = 3³, so 2<i>x</i> − 1 = 3 and <i>x</i> = 2." },
-  { u:2, t:"Exponential equations", calc:false,
-    q:"Solve <span class='m'><i>e</i><sup>2<i>x</i></sup> = 5</span>.",
-    c:["<i>x</i> = (ln 5) / 2","<i>x</i> = ln(5/2)","<i>x</i> = 2 ln 5","<i>x</i> = <i>e</i><sup>5/2</sup>"],
-    e:"Take the natural log of both sides: 2<i>x</i> = ln 5, so <i>x</i> = (ln 5)/2." },
-  { u:2, t:"Exponential models", calc:false,
-    q:"A town of 500 people grows by 4% each year. Which models the population <i>t</i> years from now?",
-    c:["<i>P</i>(<i>t</i>) = 500(1.04)<sup><i>t</i></sup>","<i>P</i>(<i>t</i>) = 500(0.04)<sup><i>t</i></sup>","<i>P</i>(<i>t</i>) = 500 + 0.04<i>t</i>","<i>P</i>(<i>t</i>) = 500(1.4)<sup><i>t</i></sup>"],
-    e:"Growing by 4% means each year is 100% + 4% = 1.04 times the previous year, so the growth factor is 1.04." },
-  { u:2, t:"Exponential models", calc:false,
-    q:"A substance has a half-life of 10 years. If there are 80 grams now, how much remains after 30 years?",
-    c:["10 g","20 g","26.7 g","40 g"],
-    e:"30 years is 3 half-lives: 80 → 40 → 20 → 10 grams." },
-  { u:2, t:"Log properties", calc:false,
-    q:"Simplify <span class='m'>ln(<i>e</i>³ · √<i>e</i>)</span>.",
-    c:["7/2","3","3/2","4"],
-    e:"<i>e</i>³ · <i>e</i><sup>1/2</sup> = <i>e</i><sup>7/2</sup>, and ln(<i>e</i><sup>7/2</sup>) = 7/2." },
-  { u:2, t:"Log properties", calc:false,
-    q:"Which is equivalent to <span class='m'>log(<i>x</i>²<i>y</i> / <i>z</i>³)</span>?",
-    c:["2 log <i>x</i> + log <i>y</i> − 3 log <i>z</i>","2 log <i>x</i> · log <i>y</i> / (3 log <i>z</i>)","log 2<i>x</i> + log <i>y</i> − log 3<i>z</i>","2 log <i>x</i> − log <i>y</i> + 3 log <i>z</i>"],
-    e:"Product rule adds, quotient rule subtracts, and the power rule moves exponents in front: 2 log <i>x</i> + log <i>y</i> − 3 log <i>z</i>." },
-  { u:2, t:"Inverse functions", calc:false,
-    q:"What is the inverse of <span class='m'><i>f</i>(<i>x</i>) = 2<i>e</i><sup><i>x</i></sup> − 1</span>?",
-    c:["<i>f</i>⁻¹(<i>x</i>) = ln((<i>x</i> + 1)/2)","<i>f</i>⁻¹(<i>x</i>) = ln(<i>x</i>)/2 + 1","<i>f</i>⁻¹(<i>x</i>) = (ln <i>x</i> + 1)/2","<i>f</i>⁻¹(<i>x</i>) = 2 ln(<i>x</i> + 1)"],
-    e:"Swap and solve: <i>x</i> = 2<i>e</i><sup><i>y</i></sup> − 1 ⇒ <i>e</i><sup><i>y</i></sup> = (<i>x</i> + 1)/2 ⇒ <i>y</i> = ln((<i>x</i> + 1)/2)." },
-  { u:2, t:"Log functions", calc:false,
-    q:"What is the domain of <span class='m'><i>f</i>(<i>x</i>) = ln(<i>x</i> − 3) + 1</span>?",
-    c:["<i>x</i> &gt; 3","<i>x</i> ≥ 3","<i>x</i> &gt; −3","All real numbers"],
-    e:"The argument of a logarithm must be positive: <i>x</i> − 3 &gt; 0, so <i>x</i> &gt; 3." },
-  { u:2, t:"Modeling", calc:false,
-    q:"For <i>x</i> = 0, 1, 2, 3 the outputs are 5, 15, 45, 135. Which type of function best models the data?",
-    c:["Exponential","Linear","Quadratic","Logarithmic"],
-    e:"Each output is 3 times the previous one. A constant ratio over equal input steps indicates an exponential model, here <i>y</i> = 5 · 3<sup><i>x</i></sup>." },
-  { u:2, t:"Semi-log plots", calc:false,
-    q:"When data are plotted with log(<i>y</i>) on the vertical axis against <i>x</i>, the points fall on a line. Which model fits the original data?",
-    c:["Exponential","Linear","Logarithmic","Quadratic"],
-    e:"If <i>y</i> = <i>ab</i><sup><i>x</i></sup>, then log <i>y</i> = log <i>a</i> + <i>x</i> log <i>b</i>, which is linear in <i>x</i>. A linear semi-log plot means exponential data." },
-  { u:2, t:"Transformations", calc:false,
-    q:"Which is equivalent to <span class='m'><i>g</i>(<i>x</i>) = 2<sup><i>x</i> + 3</sup></span>?",
-    c:["8 · 2<sup><i>x</i></sup>","6 · 2<sup><i>x</i></sup>","2<sup><i>x</i></sup> + 8","3 · 2<sup><i>x</i></sup>"],
-    e:"2<sup><i>x</i> + 3</sup> = 2³ · 2<sup><i>x</i></sup> = 8 · 2<sup><i>x</i></sup>. For exponentials, a horizontal shift is the same as a vertical dilation." },
-  { u:2, t:"Log properties", calc:false,
-    q:"If <span class='m'>log<sub><i>b</i></sub> 8 = 3/2</span>, what is <i>b</i>?",
-    c:["4","2","16","√8"],
-    e:"Rewrite as <i>b</i><sup>3/2</sup> = 8. Raise both sides to the 2/3 power: <i>b</i> = 8<sup>2/3</sup> = 4." },
-  { u:2, t:"Exponential functions", calc:false,
-    q:"What is the horizontal asymptote of <span class='m'><i>f</i>(<i>x</i>) = 3 − 2<i>e</i><sup>−<i>x</i></sup></span>?",
-    c:["<i>y</i> = 3","<i>y</i> = −2","<i>y</i> = 1","<i>y</i> = 0"],
-    e:"As <i>x</i> → ∞, <i>e</i><sup>−<i>x</i></sup> → 0, so <i>f</i>(<i>x</i>) → 3." },
-  { u:2, t:"Exponential models", calc:true,
-    q:"$1,000 is invested at 5% annual interest compounded continuously. To the nearest cent, what is the balance after 10 years?",
-    c:["$1,648.72","$1,628.89","$1,500.00","$1,051.27"],
-    e:"<i>A</i> = <i>Pe</i><sup><i>rt</i></sup> = 1000<i>e</i><sup>0.05·10</sup> = 1000<i>e</i><sup>0.5</sup> ≈ $1,648.72. ($1,628.89 is annual compounding.)" },
-  { u:2, t:"Exponential models", calc:true,
-    q:"An investment grows by 6% per year. To the nearest tenth of a year, how long does it take to double?",
-    c:["11.9 years","16.7 years","12.0 years","8.3 years"],
-    e:"Solve 1.06<sup><i>t</i></sup> = 2: <i>t</i> = ln 2 / ln 1.06 ≈ 11.9 years." },
-  { u:2, t:"Regression", calc:true,
-    q:"A bacteria culture has 200 cells at <i>t</i> = 0 hours and 350 cells at <i>t</i> = 2 hours. Assuming exponential growth, about how many cells are there at <i>t</i> = 5 hours?",
-    c:["810","637","575","1,094"],
-    e:"<i>b</i>² = 350/200 = 1.75, so <i>b</i> ≈ 1.3229. Then <i>N</i>(5) = 200 · 1.75<sup>2.5</sup> ≈ 810." },
-
-  // ---------- Unit 3 ----------
-  { u:3, t:"Unit circle", calc:false,
-    q:"What is the exact value of <span class='m'>sin(7π/6)</span>?",
-    c:["−1/2","1/2","−√3/2","√3/2"],
-    e:"7π/6 is in Quadrant III with reference angle π/6. Sine is negative there, so sin(7π/6) = −1/2." },
-  { u:3, t:"Unit circle", calc:false,
-    q:"What is the exact value of <span class='m'>tan(3π/4)</span>?",
-    c:["−1","1","−√3","√3/3"],
-    e:"3π/4 is in Quadrant II, where sine is positive and cosine negative: tan = (√2/2)/(−√2/2) = −1." },
-  { u:3, t:"Sinusoidal functions", calc:false,
-    q:"What is the period of <span class='m'><i>f</i>(<i>x</i>) = 3 sin(4<i>x</i> − π) + 2</span>?",
-    c:["π/2","4π","π/4","2π"],
-    e:"Period = 2π / |<i>b</i>| = 2π / 4 = π/2. The phase shift and vertical shift don't change it." },
-  { u:3, t:"Sinusoidal functions", calc:false,
-    q:"What are the amplitude and midline of <span class='m'><i>y</i> = −5 cos(2<i>x</i>) + 3</span>?",
-    c:["Amplitude 5, midline <i>y</i> = 3","Amplitude −5, midline <i>y</i> = 3","Amplitude 5, midline <i>y</i> = 2","Amplitude 3, midline <i>y</i> = −5"],
-    e:"Amplitude is |−5| = 5, always positive. The vertical shift +3 sets the midline at <i>y</i> = 3." },
-  { u:3, t:"Sinusoidal modeling", calc:false,
-    q:"A Ferris wheel has a diameter of 40 m and its center is 25 m above the ground. It makes one revolution every 8 minutes, and a rider boards at the lowest point at <i>t</i> = 0. Which gives the rider's height in meters?",
-    c:["<i>h</i>(<i>t</i>) = 25 − 20 cos(π<i>t</i>/4)","<i>h</i>(<i>t</i>) = 25 + 20 cos(π<i>t</i>/4)","<i>h</i>(<i>t</i>) = 25 − 40 cos(π<i>t</i>/8)","<i>h</i>(<i>t</i>) = 20 − 25 sin(π<i>t</i>/4)"],
-    e:"Midline 25, amplitude 20 (the radius), period 8 so <i>b</i> = 2π/8 = π/4. Starting at the minimum calls for −cos." },
-  { u:3, t:"Trig equations", calc:false,
-    q:"Solve <span class='m'>2 sin θ = √3</span> for 0 ≤ θ &lt; 2π.",
-    c:["θ = π/3, 2π/3","θ = π/6, 5π/6","θ = π/3, 5π/3","θ = π/6, 11π/6"],
-    e:"sin θ = √3/2 at the reference angle π/3. Sine is positive in Quadrants I and II: π/3 and 2π/3." },
-  { u:3, t:"Identities", calc:false,
-    q:"Simplify <span class='m'>(1 − cos²θ) / sin θ</span>.",
-    c:["sin θ","cos θ","1","tan θ"],
-    e:"By the Pythagorean identity, 1 − cos²θ = sin²θ, and sin²θ / sin θ = sin θ." },
-  { u:3, t:"Tangent function", calc:false,
-    q:"What is the domain of <span class='m'><i>y</i> = tan <i>x</i></span>?",
-    c:["<i>x</i> ≠ π/2 + <i>k</i>π for any integer <i>k</i>","<i>x</i> ≠ <i>k</i>π for any integer <i>k</i>","<i>x</i> ≠ π/2 + 2<i>k</i>π for any integer <i>k</i>","All real numbers"],
-    e:"tan <i>x</i> = sin <i>x</i> / cos <i>x</i> is undefined where cos <i>x</i> = 0, which is every odd multiple of π/2." },
-  { u:3, t:"Inverse trig", calc:false,
-    q:"What is <span class='m'>arccos(−√2/2)</span>?",
-    c:["3π/4","−π/4","5π/4","π/4"],
-    e:"The range of arccos is [0, π]. The angle in that range with cosine −√2/2 is 3π/4." },
-  { u:3, t:"Inverse trig", calc:false,
-    q:"What is the exact value of <span class='m'>sin(arctan(3/4))</span>?",
-    c:["3/5","4/5","3/4","5/3"],
-    e:"Draw a right triangle with opposite 3 and adjacent 4. The hypotenuse is 5, so sine = 3/5. (arctan of a positive number is in Quadrant I.)" },
-  { u:3, t:"Polar coordinates", calc:false,
-    q:"Convert the polar point <span class='m'>(<i>r</i>, θ) = (4, 2π/3)</span> to rectangular coordinates.",
-    c:["(−2, 2√3)","(2, 2√3)","(−2√3, 2)","(2√3, −2)"],
-    e:"<i>x</i> = 4 cos(2π/3) = 4(−1/2) = −2 and <i>y</i> = 4 sin(2π/3) = 4(√3/2) = 2√3." },
-  { u:3, t:"Polar coordinates", calc:false,
-    q:"Which polar coordinates represent the rectangular point (−1, −1)?",
-    c:["(√2, 5π/4)","(√2, π/4)","(2, 5π/4)","(√2, 3π/4)"],
-    e:"<i>r</i> = √(1 + 1) = √2. The point is in Quadrant III, so θ = π + π/4 = 5π/4." },
-  { u:3, t:"Polar graphs", calc:false,
-    q:"The polar graph of <span class='m'><i>r</i> = 4 cos θ</span> is",
-    c:["a circle centered at (2, 0) with radius 2","a circle centered at (0, 0) with radius 4","a circle centered at (4, 0) with radius 4","a cardioid"],
-    e:"Multiply by <i>r</i>: <i>r</i>² = 4<i>r</i> cos θ, so <i>x</i>² + <i>y</i>² = 4<i>x</i>, which is (<i>x</i> − 2)² + <i>y</i>² = 4." },
-  { u:3, t:"Polar rates of change", calc:false,
-    q:"For <span class='m'><i>r</i> = 1 + 2 sin θ</span> on 0 &lt; θ &lt; π/2, which is true about points on the graph?",
-    c:["They are getting farther from the origin","They are getting closer to the origin","Their distance from the origin is constant","They pass through the origin"],
-    e:"On (0, π/2), sin θ increases, so <i>r</i> is positive and increasing. A positive, increasing <i>r</i> means the distance from the origin is increasing." },
-  { u:3, t:"Sum identities", calc:false,
-    q:"What is the exact value of <span class='m'>sin 75°</span>?",
-    c:["(√6 + √2)/4","(√6 − √2)/4","(√3 + 1)/2","√3/2 + √2/2"],
-    e:"sin(45° + 30°) = sin 45° cos 30° + cos 45° sin 30° = (√2/2)(√3/2) + (√2/2)(1/2) = (√6 + √2)/4." },
-  { u:3, t:"Double-angle identities", calc:false,
-    q:"If <span class='m'>sin θ = 1/3</span>, what is <span class='m'>cos(2θ)</span>?",
-    c:["7/9","2/3","−7/9","8/9"],
-    e:"cos 2θ = 1 − 2 sin²θ = 1 − 2(1/9) = 7/9." },
-  { u:3, t:"Reciprocal functions", calc:false,
-    q:"What is <span class='m'>sec(π/3)</span>?",
-    c:["2","1/2","2√3/3","√3"],
-    e:"sec θ = 1 / cos θ, and cos(π/3) = 1/2, so sec(π/3) = 2." },
-  { u:3, t:"Identities", calc:false,
-    q:"Which is equivalent to <span class='m'>sin(2<i>x</i> − π/2)</span>?",
-    c:["−cos(2<i>x</i>)","cos(2<i>x</i>)","−sin(2<i>x</i>)","sin(2<i>x</i>)"],
-    e:"Using the difference identity, sin(<i>a</i> − π/2) = sin <i>a</i> · 0 − cos <i>a</i> · 1 = −cos <i>a</i>. With <i>a</i> = 2<i>x</i>, the result is −cos(2<i>x</i>)." },
-  { u:3, t:"Trig ratios", calc:false,
-    q:"An angle θ in standard position has its terminal side through (−3, 4). What is cos θ?",
-    c:["−3/5","3/5","−3/4","4/5"],
-    e:"<i>r</i> = √(9 + 16) = 5, so cos θ = <i>x</i>/<i>r</i> = −3/5." },
-  { u:3, t:"Trig equations", calc:false,
-    q:"How many solutions does <span class='m'>sin(2<i>x</i>) = 1/2</span> have on 0 ≤ <i>x</i> &lt; 2π?",
-    c:["4","2","1","8"],
-    e:"With <i>u</i> = 2<i>x</i>, <i>u</i> ranges over [0, 4π), two full cycles. sin <i>u</i> = 1/2 has 2 solutions per cycle, so 4 total." },
-  { u:3, t:"Sinusoidal modeling", calc:true,
-    q:"The temperature in a city is modeled by <span class='m'><i>T</i>(<i>m</i>) = 62 − 18 cos(π<i>m</i>/6)</span>, where <i>m</i> is months after January 1. To the nearest tenth, what is the first value of <i>m</i> &gt; 0 where <i>T</i> = 70°F?",
-    c:["3.9","3.0","2.4","8.1"],
-    e:"Solve 62 − 18 cos(π<i>m</i>/6) = 70 ⇒ cos(π<i>m</i>/6) = −4/9 ⇒ π<i>m</i>/6 = arccos(−4/9) ≈ 2.031 ⇒ <i>m</i> = 6(2.031)/π ≈ 3.9." },
-  { u:3, t:"Inverse trig", calc:true,
-    q:"A 20-foot ladder leans against a wall with its base 7 feet from the wall. To the nearest degree, what angle does the ladder make with the ground?",
-    c:["70°","20°","19°","71°"],
-    e:"cos θ = 7/20, so θ = arccos(0.35) ≈ 69.5°, about 70°." },
-
-  // ---------- Unit 4 ----------
-  { u:4, t:"Parametric functions", calc:false,
-    q:"Eliminate the parameter: <span class='m'><i>x</i> = 2<i>t</i>, <i>y</i> = <i>t</i>²</span>.",
-    c:["<i>y</i> = <i>x</i>²/4","<i>y</i> = 2<i>x</i>²","<i>y</i> = <i>x</i>²/2","<i>y</i> = 4<i>x</i>²"],
-    e:"<i>t</i> = <i>x</i>/2, so <i>y</i> = (<i>x</i>/2)² = <i>x</i>²/4." },
-  { u:4, t:"Parametric functions", calc:false,
-    q:"Describe the path of <span class='m'><i>x</i> = 3 cos <i>t</i>, <i>y</i> = 3 sin <i>t</i></span> for 0 ≤ <i>t</i> ≤ 2π.",
-    c:["A full circle of radius 3, traced counterclockwise","A full circle of radius 3, traced clockwise","A circle of radius 9, traced counterclockwise","A semicircle of radius 3"],
-    e:"<i>x</i>² + <i>y</i>² = 9 cos²<i>t</i> + 9 sin²<i>t</i> = 9. It starts at (3, 0) and moves to (0, 3) as <i>t</i> increases, so it goes counterclockwise." },
-  { u:4, t:"Vectors", calc:false,
-    q:"What is the magnitude of the vector <span class='m'>⟨3, −4⟩</span>?",
-    c:["5","7","1","25"],
-    e:"‖⟨3, −4⟩‖ = √(9 + 16) = 5." },
-  { u:4, t:"Vectors", calc:false,
-    q:"What is the dot product <span class='m'>⟨1, 2⟩ · ⟨3, −1⟩</span>?",
-    c:["1","5","⟨3, −2⟩","−1"],
-    e:"1·3 + 2·(−1) = 3 − 2 = 1. A dot product is a number, not a vector." },
-  { u:4, t:"Matrices", calc:false,
-    q:"What is the determinant of the matrix with rows [2, 1] and [3, 4]?",
-    c:["5","11","−5","8"],
-    e:"det = <i>ad</i> − <i>bc</i> = 2·4 − 1·3 = 5." },
-  { u:4, t:"Matrices", calc:false,
-    q:"A 2 × 2 matrix <i>A</i> has an inverse exactly when",
-    c:["det(<i>A</i>) ≠ 0","det(<i>A</i>) = 0","every entry of <i>A</i> is nonzero","<i>A</i> is symmetric"],
-    e:"<i>A</i>⁻¹ = (1/det <i>A</i>) times the adjugate, which exists only when det(<i>A</i>) ≠ 0." },
-  { u:4, t:"Vectors", calc:false,
-    q:"If <span class='m'><b>u</b> = ⟨2, 5⟩</span> and <span class='m'><b>v</b> = ⟨−1, 3⟩</span>, what is <span class='m'>2<b>u</b> − <b>v</b></span>?",
-    c:["⟨5, 7⟩","⟨3, 2⟩","⟨5, 13⟩","⟨4, 7⟩"],
-    e:"2<b>u</b> = ⟨4, 10⟩, and ⟨4, 10⟩ − ⟨−1, 3⟩ = ⟨5, 7⟩." }
-];
-</script>
-<script>
-(() => {
-  const $ = (s) => document.querySelector(s);
-  const STORE_KEY = "precalc-practice-v1";
-  const LETTERS = ["A", "B", "C", "D", "E"];
-
-  BANK.forEach((q, i) => { q.id = i; });
-
-  // ---- persistence (per-browser convenience only) ----
-  function loadStore() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
-  }
-  function saveStore() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch {}
-  }
-  let store = loadStore();
-  store.solved = store.solved || {};   // id -> true once answered correctly
-  store.prefs = store.prefs || {};
-
-  // ---- settings ----
-  const state = {
-    units: new Set(store.prefs.units || [1, 2, 3]),
-    calc: store.prefs.calc || "all",
-    len: store.prefs.len || 10,
-    set: [], idx: 0, picked: null, order: [], results: []
-  };
-
-  function shuffle(a) {
-    const arr = a.slice();
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
-  function chipRow(el, items, isOn, onClick) {
-    el.innerHTML = "";
-    items.forEach(([val, label]) => {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "chip"; b.textContent = label;
-      b.setAttribute("aria-pressed", isOn(val) ? "true" : "false");
-      b.addEventListener("click", () => onClick(val));
-      el.appendChild(b);
-    });
-  }
-
-  function renderControls() {
-    chipRow($("#unitChips"), Object.entries(UNITS).map(([k, v]) => [+k, `${k} · ${v}`]),
-      (v) => state.units.has(v),
-      (v) => {
-        if (state.units.has(v) && state.units.size > 1) state.units.delete(v); else state.units.add(v);
-        persistPrefs(); renderControls();
-      });
-    chipRow($("#calcChips"), [["all", "Both"], ["no", "No calculator"], ["yes", "Calculator"]],
-      (v) => state.calc === v, (v) => { state.calc = v; persistPrefs(); renderControls(); });
-    chipRow($("#lenChips"), [[10, "10"], [20, "20"], [0, "All"]],
-      (v) => state.len === v, (v) => { state.len = v; persistPrefs(); renderControls(); });
-    $("#startBtn").textContent = `Start new set (${pool().length} available)`;
-  }
-  function persistPrefs() {
-    store.prefs = { units: [...state.units], calc: state.calc, len: state.len };
-    saveStore();
-  }
-
-  function pool() {
-    return BANK.filter((q) => state.units.has(q.u) &&
-      (state.calc === "all" || (state.calc === "yes") === q.calc));
-  }
-
-  function startSet(questions) {
-    const list = questions || shuffle(pool());
-    state.set = state.len && !questions ? list.slice(0, state.len) : list;
-    state.idx = 0; state.results = [];
-    if (!state.set.length) {
-      $("#stage").innerHTML = `<p>No questions match these settings. Pick another unit or set Calculator to “Both”.</p>`;
-      renderScore();
-      return;
-    }
-    showQuestion();
-    renderScore();
-  }
-
-  function showQuestion() {
-    const q = state.set[state.idx];
-    state.picked = null;
-    state.order = shuffle(q.c.map((_, i) => i));
-    const n = state.set.length;
-    $("#stage").innerHTML = `
-      <div class="qmeta">
-        <div class="badges">
-          <span class="badge">Unit ${q.u} · ${q.t}</span>
-          <span class="badge calc">${q.calc ? "Calculator" : "No calculator"}</span>
-        </div>
-        <span class="counter">Question ${state.idx + 1} of ${n}</span>
-      </div>
-      <div class="bar" aria-hidden="true"><span style="width:${(state.idx / n) * 100}%"></span></div>
-      <p class="question">${q.q}</p>
-      <div class="choices" role="group" aria-label="Answer choices">
-        ${state.order.map((ci, k) => `
-          <button class="choice" type="button" data-k="${k}">
-            <span class="key">${LETTERS[k]}</span><span class="txt">${q.c[ci]}</span>
-          </button>`).join("")}
-      </div>
-      <div id="feedback"></div>
-      <div class="actions">
-        <span class="hint">Keys: <kbd>A</kbd>–<kbd>D</kbd> to answer, <kbd>Enter</kbd> for next</span>
-        <button class="btn" id="nextBtn" type="button" disabled>${state.idx + 1 === n ? "See results" : "Next question"}</button>
-      </div>`;
-    document.querySelectorAll(".choice").forEach((b) =>
-      b.addEventListener("click", () => answer(+b.dataset.k)));
-    $("#nextBtn").addEventListener("click", next);
-  }
-
-  function answer(k) {
-    if (state.picked !== null) return;
-    const q = state.set[state.idx];
-    state.picked = k;
-    const correctK = state.order.indexOf(0);
-    const ok = k === correctK;
-    state.results.push({ q, ok, chosen: q.c[state.order[k]] });
-    if (ok) { store.solved[q.id] = true; saveStore(); }
-
-    document.querySelectorAll(".choice").forEach((b) => {
-      const bk = +b.dataset.k;
-      b.disabled = true;
-      if (bk === correctK) b.classList.add("correct");
-      else if (bk === k) b.classList.add("wrong");
-    });
-    $("#feedback").innerHTML = `
-      <div class="explain ${ok ? "" : "missed"}">
-        <strong>${ok ? "Correct." : `Not quite. The answer is ${LETTERS[correctK]}.`}</strong>
-        <p>${q.e}</p>
-      </div>`;
-    const nb = $("#nextBtn");
-    nb.disabled = false; nb.focus();
-    renderScore(); renderMastery();
-  }
-
-  function next() {
-    if (state.picked === null) return;
-    if (state.idx + 1 < state.set.length) { state.idx++; showQuestion(); }
-    else showSummary();
-  }
-
-  function showSummary() {
-    const r = state.results;
-    const right = r.filter((x) => x.ok).length;
-    const missed = r.filter((x) => !x.ok);
-    const pct = Math.round((right / r.length) * 100);
-    const verdict = pct >= 90 ? "Exam ready on this material." :
-                    pct >= 70 ? "Solid. Review the misses below." :
-                    "Keep going. Read each explanation, then retry the misses.";
-    state.picked = null;
-    $("#stage").innerHTML = `
-      <div class="summary" style="display:grid;gap:16px">
-        <span class="eyebrow">Set complete</span>
-        <h2>${right} of ${r.length} correct (${pct}%)</h2>
-        <p class="small">${verdict}</p>
-        ${missed.length ? `
-          <div style="display:grid;gap:8px">
-            <strong>Questions to review</strong>
-            <ol class="missed-list">${missed.map((m) => `
-              <li>${m.q.q}<span class="ans">Answer: <span class="m">${m.q.c[0]}</span></span></li>`).join("")}
-            </ol>
-          </div>` : ""}
-        <div class="actions">
-          ${missed.length ? `<button class="btn" id="retryBtn" type="button">Retry the ${missed.length} missed</button>` : ""}
-          <button class="btn ghost" id="againBtn" type="button">New set</button>
-        </div>
-      </div>`;
-    if (missed.length) $("#retryBtn").addEventListener("click", () => startSet(shuffle(missed.map((m) => m.q))));
-    $("#againBtn").addEventListener("click", () => startSet());
-  }
-
-  function renderScore() {
-    const r = state.results;
-    const right = r.filter((x) => x.ok).length;
-    $("#sessScore").textContent = `${right} / ${r.length}`;
-    $("#sessNote").textContent = r.length
-      ? `${Math.round((right / r.length) * 100)}% correct so far, ${state.set.length - r.length} left in this set.`
-      : "Answer a question to start scoring.";
-  }
-
-  function renderMastery() {
-    $("#mastery").innerHTML = Object.entries(UNITS).map(([u, name]) => {
-      const qs = BANK.filter((q) => q.u === +u);
-      const done = qs.filter((q) => store.solved[q.id]).length;
-      return `<div class="unit-row">
-        <div class="top"><span>Unit ${u}: ${name}</span><span class="num">${done}/${qs.length}</span></div>
-        <div class="meter"><span style="width:${(done / qs.length) * 100}%"></span></div>
-      </div>`;
-    }).join("");
-    renderReset(false);
-  }
-
-  function renderReset(confirming) {
-    const area = $("#resetArea");
-    if (!confirming) {
-      area.innerHTML = `<button class="linkbtn" type="button" id="resetBtn">Reset progress</button>`;
-      $("#resetBtn").addEventListener("click", () => renderReset(true));
-    } else {
-      area.innerHTML = `<div class="confirm"><span>Clear all saved progress?</span>
-        <button class="btn" type="button" id="yesReset">Clear</button>
-        <button class="btn ghost" type="button" id="noReset">Cancel</button></div>`;
-      $("#yesReset").addEventListener("click", () => { store.solved = {}; saveStore(); renderMastery(); });
-      $("#noReset").addEventListener("click", () => renderReset(false));
-    }
-  }
-
-  document.addEventListener("keydown", (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (!document.querySelector(".choice")) return;
-    const k = LETTERS.indexOf(e.key.toUpperCase());
-    if (k >= 0 && k < 4 && state.picked === null) { answer(k); e.preventDefault(); }
-    else if (e.key === "Enter" && state.picked !== null && document.activeElement?.id !== "nextBtn") { next(); e.preventDefault(); }
-  });
-
-  $("#startBtn").addEventListener("click", () => startSet());
-  renderControls();
-  renderMastery();
-  startSet();
-})();
-</script>
+<script src="questions.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

@@ -296,6 +296,8 @@ kbd { font: 600 .74rem var(--f-ui); border: 1px solid var(--line-strong); border
 .auth-msg.bad { color: var(--bad); }
 .auth-msg:empty { display: none; }
 .auth-note { margin-top: -6px; }
+.ver { font-size: .74rem; color: var(--ink-3); opacity: .8; }
+p.ver { margin-top: -14px; }
 
 footer { color: var(--ink-3); font-size: .8rem; border-top: 1px solid var(--line); padding-top: 18px; }
 @media (max-width: 560px) {
@@ -348,6 +350,7 @@ footer { color: var(--ink-3); font-size: .8rem; border-top: 1px solid var(--line
     </form>
     <p class="auth-msg" id="authMsg" role="alert"></p>
     <p class="small center auth-note">Your account and progress are saved in this browser, on this device.</p>
+    <p class="small center ver">Version 3</p>
   </section>
 </main>
 
@@ -431,11 +434,11 @@ footer { color: var(--ink-3); font-size: .8rem; border-top: 1px solid var(--line
     </aside>
   </div>
 
-  <footer>Covers Units 1–3 of AP Precalculus, the units assessed on the AP exam. Questions marked “Calculator” are meant for a graphing calculator, like Part B of each exam section.</footer>
+  <footer>Covers Units 1–3 of AP Precalculus, the units assessed on the AP exam. Questions marked “Calculator” are meant for a graphing calculator, like Part B of each exam section. <span class="ver">Version 3</span></footer>
 </main>
 
-<script src="questions.js"></script>
-<script src="generators.js"></script>
-<script src="app.js"></script>
+<script src="questions.js?v=3"></script>
+<script src="generators.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

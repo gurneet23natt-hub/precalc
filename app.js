@@ -1,9 +1,9 @@
 (() => {
   const $ = (s) => document.querySelector(s);
   const LETTERS = ["A", "B", "C", "D"];
-  const STORE_KEY = "precalc-practice-v2";
   const LOCK_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
   const UNLOCK_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 7V5a3 3 0 0 1 5.8-1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  const MASTER_MIN = 5, MASTER_ACC = 0.8;   // a topic is mastered after 5+ answers at 80%+ correct
 
   // Stable ids, so saved progress survives edits to the bank's order.
   function hash(str) {
@@ -11,7 +11,11 @@
     for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
     return "q" + (h >>> 0).toString(36);
   }
-  BANK.forEach((q) => { q.id = hash(q.q); q.key = q.u + "|" + q.t; });
+  BANK.forEach((q) => { q.id = hash(q.q); q.key = q.t; });
+  const TOPIC_NAME = {};
+  Object.values(TOPICS).forEach((list) => list.forEach(([id, name]) => { TOPIC_NAME[id] = name; }));
+  const allKeys = Object.values(TOPICS).flatMap((list) => list.map(([id]) => id));
+  const unitOf = (id) => parseInt(id, 10);
 
   // =====================================================================
   // Math answer checking for the step-by-step walkthrough
@@ -175,34 +179,91 @@
       .replace(/([+−])/g, (m, op, i) => (i === 0 ? op : " " + op + " ")).replace(/\(\s/g, "(").replace(/ {2,}/g, " ");
   }
 
-  // =====================================================================
-  // Saved state (this browser only)
-  // =====================================================================
-  function loadStore() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
-  }
-  function saveStore() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch {}
-  }
-  const store = loadStore();
-  store.solved = store.solved || {};
-  store.stats = store.stats || {};   // id -> {a: answered, c: correct, h: used steps}
-  store.prefs = store.prefs || {};
 
-  const allKeys = Object.entries(TOPICS).flatMap(([u, ts]) => ts.map((t) => u + "|" + t));
-  const state = {
-    units: new Set((store.prefs.units || [1, 2, 3]).filter((u) => UNITS[u])),
-    calc: store.prefs.calc || "all",
-    len: store.prefs.len ?? 10,
-    locked: new Set((store.prefs.locked || []).filter((k) => allKeys.includes(k))),
-    focus: new Set((store.prefs.focus || []).filter((k) => allKeys.includes(k))),
-    set: [], idx: 0, picked: null, order: [], results: [],
-    steps: null
-  };
-  if (!state.units.size) [1, 2, 3].forEach((u) => state.units.add(u));
+  // =====================================================================
+  // Browser storage (falls back to memory when storage is blocked)
+  // =====================================================================
+  const mem = {};
+  const lsGet = (k) => { try { const v = localStorage.getItem(k); return v === null ? (mem[k] ?? null) : v; } catch { return mem[k] ?? null; } };
+  const lsSet = (k, v) => { mem[k] = v; try { localStorage.setItem(k, v); } catch {} };
+  const lsDel = (k) => { delete mem[k]; try { localStorage.removeItem(k); } catch {} };
+  const readJSON = (k, fallback) => { try { return JSON.parse(lsGet(k)) || fallback; } catch { return fallback; } };
 
+  // =====================================================================
+  // Accounts. There is no server, so accounts live in this browser.
+  // Passwords are stored only as salted PBKDF2 hashes.
+  // =====================================================================
+  const USERS_KEY = "precalc-accounts-v1", SESSION_KEY = "precalc-session-v1";
+  const toHex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  async function hashPassword(password, saltHex) {
+    if (!(window.crypto && crypto.subtle)) throw new Error("no-crypto");
+    const salt = new Uint8Array(saltHex.match(/../g).map((h) => parseInt(h, 16)));
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+    return toHex(await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 120000, hash: "SHA-256" }, key, 256));
+  }
+  const newSalt = () => toHex(crypto.getRandomValues(new Uint8Array(16)));
+  const normEmail = (e) => e.trim().toLowerCase();
+  const users = () => readJSON(USERS_KEY, {});
+
+  function showAuth(mode) {
+    $("#auth").hidden = false; $("#app").hidden = true;
+    const signup = mode !== "login";
+    $("#signupForm").hidden = !signup; $("#loginForm").hidden = signup;
+    $("#tabSignup").setAttribute("aria-selected", signup); $("#tabLogin").setAttribute("aria-selected", !signup);
+    $("#authMsg").textContent = "";
+    const first = signup ? $("#suFirst") : $("#liEmail");
+    if (first) first.focus();
+  }
+  function authError(msg) { const el = $("#authMsg"); el.textContent = msg; el.className = "auth-msg bad"; }
+
+  $("#tabSignup").addEventListener("click", () => showAuth("signup"));
+  $("#tabLogin").addEventListener("click", () => showAuth("login"));
+  $("#toLogin").addEventListener("click", () => showAuth("login"));
+  $("#toSignup").addEventListener("click", () => showAuth("signup"));
+
+  $("#signupForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const first = $("#suFirst").value.trim(), last = $("#suLast").value.trim(), email = normEmail($("#suEmail").value), pw = $("#suPass").value;
+    if (!first || !last) return authError("Enter your first and last name.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authError("Enter a valid email address, like name@school.org.");
+    if (pw.length < 8) return authError("Use a password with at least 8 characters.");
+    const all = users();
+    if (all[email]) return authError("An account with this email already exists on this device. Log in instead.");
+    try {
+      const salt = newSalt();
+      all[email] = { first, last, salt, hash: await hashPassword(pw, salt), created: Date.now() };
+    } catch { return authError("This browser can't create secure accounts. Open the site over https in an up-to-date browser."); }
+    lsSet(USERS_KEY, JSON.stringify(all));
+    lsSet(SESSION_KEY, email);
+    startApp(email, all[email]);
+  });
+
+  $("#loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = normEmail($("#liEmail").value), pw = $("#liPass").value, u = users()[email];
+    if (!u) return authError("No account with that email on this device. Check the spelling or sign up.");
+    let ok = false;
+    try { ok = (await hashPassword(pw, u.salt)) === u.hash; } catch { return authError("This browser can't check passwords. Open the site over https in an up-to-date browser."); }
+    if (!ok) return authError("That password doesn't match. Try again.");
+    lsSet(SESSION_KEY, email);
+    startApp(email, u);
+  });
+
+  function logOut() {
+    lsDel(SESSION_KEY);
+    try { location.reload(); } catch { showAuth("login"); }
+  }
+
+  // =====================================================================
+  // App state
+  // =====================================================================
+  let store, STORE_KEY, account;
+  const state = { units: new Set(), calc: "all", len: 10, locked: new Set(), focus: new Set(), view: "mastery",
+    set: [], idx: 0, picked: null, order: [], results: [], steps: null };
+
+  function saveStore() { lsSet(STORE_KEY, JSON.stringify(store)); }
   function persistPrefs() {
-    store.prefs = { topicsOpen: store.prefs.topicsOpen, units: [...state.units], calc: state.calc, len: state.len, locked: [...state.locked], focus: [...state.focus] };
+    store.prefs = { ...store.prefs, units: [...state.units], calc: state.calc, len: state.len, locked: [...state.locked], focus: [...state.focus], view: state.view };
     saveStore();
   }
 
@@ -220,7 +281,7 @@
   // Practice pool: units, calculator filter, topic focus and locks
   // =====================================================================
   function activeTopics() {
-    const open = allKeys.filter((k) => state.units.has(+k.split("|")[0]) && !state.locked.has(k));
+    const open = allKeys.filter((k) => state.units.has(unitOf(k)) && !state.locked.has(k));
     const focused = open.filter((k) => state.focus.has(k));
     return { open, focused, use: new Set(focused.length ? focused : open) };
   }
@@ -229,10 +290,9 @@
     return BANK.filter((q) => use.has(q.key) && (state.calc === "all" || (state.calc === "yes") === q.calc));
   }
 
-  function topicAccuracy(key) {
-    let a = 0, c = 0;
-    BANK.forEach((q) => { if (q.key === key && store.stats[q.id]) { a += store.stats[q.id].a; c += store.stats[q.id].c; } });
-    return { a, c, pct: a ? Math.round((c / a) * 100) : null };
+  function topicStats(key) {
+    const t = store.topics[key] || { a: 0, c: 0 };
+    return { a: t.a, c: t.c, pct: t.a ? Math.round((t.c / t.a) * 100) : null, mastered: t.a >= MASTER_MIN && t.c / t.a >= MASTER_ACC };
   }
 
   function chipRow(el, items, isOn, onClick) {
@@ -247,7 +307,7 @@
   }
 
   function renderControls() {
-    chipRow($("#unitChips"), Object.entries(UNITS).map(([k, v]) => [+k, `Unit ${k} · ${v.replace(" Functions", "")}`]),
+    chipRow($("#unitChips"), Object.keys(UNITS).map((k) => [+k, `Unit ${k}`]),
       (v) => state.units.has(v),
       (v) => {
         if (state.units.has(v) && state.units.size > 1) state.units.delete(v); else state.units.add(v);
@@ -255,37 +315,35 @@
       });
     chipRow($("#calcChips"), [["all", "Both"], ["no", "No calculator"], ["yes", "Calculator"]],
       (v) => state.calc === v, (v) => { state.calc = v; persistPrefs(); renderControls(); });
-    chipRow($("#lenChips"), [[10, "10"], [20, "20"], [0, "All"]],
+    chipRow($("#lenChips"), [[10, "10"], [20, "20"], [40, "40"]],
       (v) => state.len === v, (v) => { state.len = v; persistPrefs(); renderControls(); });
     renderTopics();
-    const n = pool().length;
-    $("#startBtn").textContent = `Start new set (${n} question${n === 1 ? "" : "s"})`;
-    $("#startBtn").disabled = n === 0;
+    $("#startBtn").disabled = pool().length === 0;
   }
 
   function renderTopics() {
     const { open, focused } = activeTopics();
-    const shown = allKeys.filter((k) => state.units.has(+k.split("|")[0]));
+    const shown = allKeys.filter((k) => state.units.has(unitOf(k)));
     const lockedShown = shown.filter((k) => state.locked.has(k)).length;
     $("#topicStatus").textContent = focused.length
       ? `Focusing on ${focused.length} topic${focused.length === 1 ? "" : "s"}`
-      : `Practicing all ${open.length} unlocked topic${open.length === 1 ? "" : "s"}` + (lockedShown ? `, ${lockedShown} locked` : "");
+      : `All topics in the selected units` + (lockedShown ? ` except ${lockedShown} locked` : "");
     $("#clearFocus").hidden = !focused.length;
     $("#unlockAll").hidden = !state.locked.size;
+    void open;
 
     const grid = $("#topicGrid");
     grid.innerHTML = [...state.units].sort().map((u) => `
       <div class="tcol">
         <h3>Unit ${u} · ${UNITS[u]}</h3>
-        ${TOPICS[u].map((t, i) => {
-          const key = u + "|" + t, locked = state.locked.has(key);
-          const count = BANK.filter((q) => q.key === key).length;
-          const acc = topicAccuracy(key);
+        ${TOPICS[u].map(([id, name]) => {
+          const locked = state.locked.has(id), st = topicStats(id), domId = "focus-" + id.replace(".", "-");
+          const meta = locked ? "Locked" : st.mastered ? `<span class="tag-mastered">Mastered</span> · ${st.pct}% correct` : st.pct != null ? `${st.pct}% correct` : "Not started";
           return `<div class="trow${locked ? " locked" : ""}">
-            <input type="checkbox" id="focus-${u}-${i}" data-key="${esc(key)}" ${state.focus.has(key) && !locked ? "checked" : ""} ${locked ? "disabled" : ""}>
-            <label for="focus-${u}-${i}"><span class="tname">${t}</span>
-              <span class="tmeta">${locked ? "Locked" : `${count} questions${acc.pct != null ? ` · ${acc.pct}% correct` : ""}`}</span></label>
-            <button type="button" class="lockbtn" data-key="${esc(key)}" aria-pressed="${locked}" aria-label="${locked ? "Unlock" : "Lock"} ${esc(t)}" title="${locked ? "Unlock topic" : "Lock topic"}">${locked ? LOCK_SVG : UNLOCK_SVG}</button>
+            <input type="checkbox" id="${domId}" data-key="${id}" ${state.focus.has(id) && !locked ? "checked" : ""} ${locked ? "disabled" : ""}>
+            <label for="${domId}"><span class="tname"><span class="tnum">${id}</span> ${name}</span>
+              <span class="tmeta">${meta}</span></label>
+            <button type="button" class="lockbtn" data-key="${id}" aria-pressed="${locked}" aria-label="${locked ? "Unlock" : "Lock"} topic ${id}" title="${locked ? "Unlock topic" : "Lock topic"}">${locked ? LOCK_SVG : UNLOCK_SVG}</button>
           </div>`;
         }).join("")}
       </div>`).join("");
@@ -299,7 +357,7 @@
       const k = b.dataset.key;
       if (state.locked.has(k)) state.locked.delete(k); else { state.locked.add(k); state.focus.delete(k); }
       persistPrefs(); renderControls();
-      const again = grid.querySelector(`.lockbtn[data-key="${CSS.escape(k)}"]`); if (again) again.focus();
+      const again = grid.querySelector(`.lockbtn[data-key="${k}"]`); if (again) again.focus();
     }));
   }
 
@@ -328,13 +386,13 @@
     $("#stage").innerHTML = `
       <div class="qmeta">
         <div class="badges">
-          <span class="badge">Unit ${q.u} · ${q.t}</span>
+          <span class="badge">${q.t} ${TOPIC_NAME[q.t]}</span>
           <span class="badge calc">${q.calc ? "Calculator" : "No calculator"}</span>
         </div>
         <span class="counter">Question ${state.idx + 1} of ${n}</span>
       </div>
       <div class="bar" aria-hidden="true"><span style="width:${(state.idx / n) * 100}%"></span></div>
-      <p class="question">${q.q}</p>
+      <div class="question">${q.q}</div>
       <div class="choices" role="group" aria-label="Answer choices">
         ${state.order.map((ci, k) => `
           <button class="choice" type="button" data-k="${k}">
@@ -445,6 +503,7 @@
     renderSteps(); focusStep();
   }
 
+
   function answer(k) {
     if (state.picked !== null) return;
     const q = state.set[state.idx];
@@ -453,10 +512,9 @@
     const ok = k === correctK;
     const hinted = state.steps.used;
     state.results.push({ q, ok, hinted });
-    const s = store.stats[q.id] || { a: 0, c: 0, h: 0 };
-    s.a++; if (ok) s.c++; if (hinted) s.h++;
-    store.stats[q.id] = s;
-    if (ok) store.solved[q.id] = true;
+    const bump = (obj, key) => { const s = obj[key] || { a: 0, c: 0, h: 0 }; s.a++; if (ok) s.c++; if (hinted) s.h++; obj[key] = s; };
+    bump(store.stats, q.id);
+    bump(store.topics, q.t);
     saveStore();
 
     document.querySelectorAll(".choice").forEach((b) => {
@@ -474,7 +532,7 @@
     nb.disabled = false;
     if (!state.steps.open || state.steps.idx >= (q.s || []).length) nb.focus();
     renderSteps();
-    renderScore(); renderMastery(); renderTopics();
+    renderScore(); renderProgress(); renderTopics();
   }
 
   function next() {
@@ -495,14 +553,14 @@
     state.picked = null;
     $("#stage").innerHTML = `
       <div class="summary">
-        <span class="eyebrow">Set complete</span>
+        <span class="label">Set complete</span>
         <h2>${right} of ${r.length} correct (${pct}%)</h2>
         <p class="small">${verdict}${hinted ? ` You used the step-by-step hint on ${hinted} question${hinted === 1 ? "" : "s"}.` : ""}</p>
         ${missed.length ? `
           <div class="review">
             <strong>Questions to review</strong>
             <ol class="missed-list">${missed.map((m) => `
-              <li>${m.q.q}<span class="ans">Answer: <span class="m">${m.q.c[0]}</span></span></li>`).join("")}
+              <li><div class="question-sm">${m.q.q}</div><span class="ans">Answer: <span class="m">${m.q.c[0]}</span></span></li>`).join("")}
             </ol>
           </div>` : ""}
         <div class="actions">
@@ -526,19 +584,38 @@
       : "Answer a question to start scoring.";
   }
 
-  function unitSolved(u) {
-    const qs = BANK.filter((q) => q.u === +u);
-    return { done: qs.filter((q) => store.solved[q.id]).length, total: qs.length };
+  function unitStats(u) {
+    const ids = TOPICS[u].map(([id]) => id);
+    let a = 0, c = 0, mastered = 0;
+    ids.forEach((id) => { const t = topicStats(id); a += t.a; c += t.c; if (t.mastered) mastered++; });
+    return { a, c, pct: a ? Math.round((c / a) * 100) : null, mastered, topics: ids.length };
+  }
+  function totals() {
+    let a = 0, c = 0, h = 0;
+    Object.values(store.topics).forEach((t) => { a += t.a; c += t.c; h += t.h; });
+    const mastered = allKeys.filter((k) => topicStats(k).mastered).length;
+    return { answered: a, correct: c, hinted: h, mastered, topics: allKeys.length };
   }
 
-  function renderMastery() {
+  function renderProgress() {
+    const mastery = state.view === "mastery";
+    chipRow($("#viewChips"), [["mastery", "Mastery"], ["accuracy", "Accuracy"]], (v) => state.view === v,
+      (v) => { state.view = v; persistPrefs(); renderProgress(); });
+    $("#progressHelp").textContent = mastery
+      ? `A topic is mastered once you've answered at least ${MASTER_MIN} of its questions with ${MASTER_ACC * 100}% or more correct.`
+      : "The share of your answers in each unit that were correct.";
     $("#mastery").innerHTML = Object.entries(UNITS).map(([u, name]) => {
-      const { done, total } = unitSolved(u);
+      const s = unitStats(u);
+      const right = mastery ? `${s.mastered} of ${s.topics} topics` : s.pct == null ? "Not started" : `${s.pct}%`;
+      const width = mastery ? (s.mastered / s.topics) * 100 : s.pct || 0;
+      const sub = mastery ? "" : s.a ? `<span class="usub">${s.c} correct of ${s.a} answered</span>` : "";
       return `<div class="unit-row">
-        <div class="top"><span>Unit ${u}: ${name.replace(" Functions", "")}</span><span class="num">${done}/${total}</span></div>
-        <div class="meter"><span style="width:${(done / total) * 100}%"></span></div>
+        <div class="top"><span>Unit ${u}: ${name.replace(" Functions", "")}</span><span class="num">${right}</span></div>
+        <div class="meter ${mastery ? "" : "acc"}"><span style="width:${width}%"></span></div>${sub}
       </div>`;
     }).join("");
+    const t = totals();
+    $("#topSolved").textContent = `${t.answered} answered`;
     renderReset(false);
     renderShare();
   }
@@ -549,71 +626,93 @@
       area.innerHTML = `<button class="linkbtn" type="button" id="resetBtn">Reset progress</button>`;
       $("#resetBtn").addEventListener("click", () => renderReset(true));
     } else {
-      area.innerHTML = `<div class="confirm"><span>Clear all saved progress?</span>
+      area.innerHTML = `<div class="confirm"><span>Clear all of your saved progress?</span>
         <button class="btn small-btn" type="button" id="yesReset">Clear</button>
         <button class="btn ghost small-btn" type="button" id="noReset">Cancel</button></div>`;
-      $("#yesReset").addEventListener("click", () => { store.solved = {}; store.stats = {}; saveStore(); renderMastery(); renderTopics(); });
+      $("#yesReset").addEventListener("click", () => { store.stats = {}; store.topics = {}; saveStore(); renderProgress(); renderTopics(); });
       $("#noReset").addEventListener("click", () => renderReset(false));
     }
   }
 
-  function totals() {
-    let answered = 0, correct = 0, hinted = 0;
-    Object.values(store.stats).forEach((s) => { answered += s.a; correct += s.c; hinted += s.h; });
-    const solved = BANK.filter((q) => store.solved[q.id]).length;
-    return { answered, correct, hinted, solved, total: BANK.length };
-  }
-
   function buildReport() {
     const t = totals();
-    const date = new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    const now = new Date();
+    const date = now.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+    const line = "-".repeat(56);
     const lines = [
-      "AP Precalculus practice report",
-      `Date: ${date}`,
-      `Questions solved: ${t.solved} of ${t.total} (${Math.round((t.solved / t.total) * 100)}%)`,
-      t.answered
-        ? `Answers given: ${t.answered}, ${Math.round((t.correct / t.answered) * 100)}% correct` + (t.hinted ? `, ${t.hinted} with step-by-step hints` : "")
-        : "Answers given: none yet",
-      ""
+      "PRECALC PRACTICE ROOM - PROGRESS REPORT",
+      line,
+      `Student:   ${account.first} ${account.last}`,
+      `Email:     ${account.email}`,
+      `Date:      ${date}`,
+      line,
+      "",
+      "OVERALL",
+      `  Questions answered:   ${t.answered}`,
+      `  Accuracy:             ${t.answered ? Math.round((t.correct / t.answered) * 100) + "%" : "-"}`,
+      `  Topics mastered:      ${t.mastered} of ${t.topics}`,
+      `  Answers using hints:  ${t.hinted}`,
+      "",
+      "BY UNIT"
     ];
     Object.entries(UNITS).forEach(([u, name]) => {
-      const { done, total } = unitSolved(u);
-      lines.push(`Unit ${u}, ${name}: ${done}/${total} solved`);
+      const s = unitStats(u);
+      lines.push(`  Unit ${u}: ${name}`);
+      lines.push(`    Accuracy: ${s.pct == null ? "not started" : s.pct + "% (" + s.c + " of " + s.a + ")"}    Mastered: ${s.mastered} of ${s.topics} topics`);
     });
-    const rated = allKeys.map((k) => ({ k, ...topicAccuracy(k) })).filter((x) => x.a >= 2);
-    if (rated.length) {
-      const name = (x) => `${x.k.split("|")[1]} (${x.pct}%)`;
-      const byPct = rated.slice().sort((a, b) => b.pct - a.pct);
-      lines.push("", "Strongest topics: " + byPct.slice(0, 3).map(name).join(", "));
-      const weak = byPct.filter((x) => x.pct < 80).reverse().slice(0, 3);
-      if (weak.length) lines.push("Needs practice: " + weak.map(name).join(", "));
+    lines.push("", "BY TOPIC (topics practiced so far)");
+    const practiced = allKeys.filter((k) => topicStats(k).a > 0);
+    if (!practiced.length) lines.push("  None yet.");
+    practiced.forEach((k) => {
+      const s = topicStats(k);
+      lines.push(`  ${(k + " " + TOPIC_NAME[k]).padEnd(58).slice(0, 58)} ${String(s.pct + "%").padStart(4)}  (${s.c}/${s.a})${s.mastered ? "  MASTERED" : ""}`);
+    });
+    const weak = practiced.map((k) => ({ k, ...topicStats(k) })).filter((x) => x.a >= 3 && x.pct < 70).sort((a, b) => a.pct - b.pct).slice(0, 5);
+    if (weak.length) {
+      lines.push("", "NEEDS PRACTICE");
+      weak.forEach((x) => lines.push(`  ${x.k} ${TOPIC_NAME[x.k]} (${x.pct}%)`));
     }
-    if (state.focus.size) lines.push("Focusing on: " + [...state.focus].map((k) => k.split("|")[1]).join(", "));
-    if (state.locked.size) lines.push("Locked topics: " + [...state.locked].map((k) => k.split("|")[1]).join(", "));
+    if (state.focus.size) lines.push("", "Currently focusing on: " + [...state.focus].join(", "));
+    if (state.locked.size) lines.push("Locked topics: " + [...state.locked].join(", "));
+    lines.push("", line, "Generated by Precalc Practice Room");
     return lines.join("\n");
   }
 
   function renderShare() {
     const t = totals();
     $("#shareSummary").textContent = t.answered
-      ? `${t.solved} of ${t.total} questions solved, ${Math.round((t.correct / t.answered) * 100)}% of answers correct.`
+      ? `${t.answered} answered, ${Math.round((t.correct / t.answered) * 100)}% correct, ${t.mastered} topic${t.mastered === 1 ? "" : "s"} mastered.`
       : "Answer a few questions and your report will fill in.";
   }
 
-  $("#copyReport").addEventListener("click", () => {
-    const text = buildReport();
-    const box = $("#reportBox");
-    box.value = text;
-    const fallback = () => {
-      box.hidden = false; box.focus(); box.select();
-      $("#copyMsg").textContent = "Copying isn't available here. The report is selected, so copy it yourself.";
-    };
+  async function downloadText(filename, text) {
+    if (window.claude && typeof window.claude.use === "function") {
+      try {
+        const dl = await window.claude.use("downloads");
+        if (dl) { await dl.save({ filename, data: text }); return "saved"; }
+      } catch (e) { if (e && /declin|cancel|abort/i.test(String(e.code || e.message))) return "declined"; }
+    }
     try {
-      navigator.clipboard.writeText(text).then(() => {
-        box.hidden = false;
-        $("#copyMsg").textContent = "Copied. Paste it into a message, email, or your class's assignment.";
-      }, fallback);
-    } catch { fallback(); }
+      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      return "saved";
+    } catch { return "failed"; }
+  }
+
+  $("#downloadReport").addEventListener("click", async () => {
+    const text = buildReport();
+    const slug = `${account.first}-${account.last}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "student";
+    const res = await downloadText(`precalc-progress-${slug}.txt`, text);
+    $("#copyMsg").textContent = res === "saved" ? "Report downloaded. Attach the .txt file to an email or upload it to your class page."
+      : res === "declined" ? "Download canceled." : "The download didn't start. Use “Show report text” and copy it instead.";
+  });
+  $("#showReport").addEventListener("click", () => {
+    const box = $("#reportBox");
+    box.value = buildReport(); box.hidden = !box.hidden;
+    $("#showReport").textContent = box.hidden ? "Show report text" : "Hide report text";
+    if (!box.hidden) { box.focus(); box.select(); }
   });
 
   // ---- Class board (only where the page runs as a shared Claude artifact) ----
@@ -627,9 +726,8 @@
     const postBtn = $("#postBtn"), removeBtn = $("#removePost"), msg = $("#boardMsg");
     if (!uid) { postBtn.hidden = true; msg.textContent = "Sign in to Claude to post your own progress."; }
 
-    let rows = [];
-    let mine = null;
-    db.collection("board").orderBy("solved", "desc").limit(200).onSnapshot((snap) => {
+    let rows = [], mine = null;
+    db.collection("board").orderBy("correct", "desc").limit(200).onSnapshot((snap) => {
       rows = snap.docs.filter((d) => d.exists).map((d) => ({ id: d.id, ...d.data() }));
       mine = rows.find((r) => r.id === uid) || null;
       drawBoard();
@@ -639,23 +737,20 @@
       postBtn.textContent = mine ? "Update my post" : "Post my progress";
       removeBtn.hidden = !mine;
       const list = $("#boardList");
-      if (!rows.length) {
-        list.innerHTML = `<p class="small">No one has posted yet. Post your progress to start the board.</p>`;
-        return;
-      }
+      if (!rows.length) { list.innerHTML = `<p class="small">No one has posted yet. Post your progress to start the board.</p>`; return; }
       const ps = user ? await user.profiles(rows.map((r) => r.id)) : {};
       list.innerHTML = "";
       rows.forEach((r, i) => {
         const p = ps[r.id] || {};
         const row = document.createElement("div");
         row.className = "brow" + (r.id === uid ? " me" : "");
-        const total = r.total || BANK.length;
         const acc = r.answered ? Math.round((r.correct / r.answered) * 100) : 0;
+        const tot = r.topics || allKeys.length;
         row.innerHTML = `<span class="brank">${i + 1}</span>
           <img class="bav" alt="" src="">
-          <div class="bmain"><div class="btop"><span class="bname"></span><span class="num">${r.solved}/${total}</span></div>
-            <div class="meter"><span style="width:${Math.min(100, (r.solved / total) * 100)}%"></span></div>
-            <span class="bsub">${acc}% correct · updated ${ago(r.updatedAt)}</span></div>`;
+          <div class="bmain"><div class="btop"><span class="bname"></span><span class="num">${r.correct || 0} correct</span></div>
+            <div class="meter"><span style="width:${Math.min(100, ((r.mastered || 0) / tot) * 100)}%"></span></div>
+            <span class="bsub">${acc}% accuracy · ${r.mastered || 0} topics mastered · updated ${ago(r.updatedAt)}</span></div>`;
         row.querySelector(".bav").src = p.avatarUrl || "";
         row.querySelector(".bname").textContent = (p.name || "Someone") + (r.id === uid ? " (you)" : "");
         list.appendChild(row);
@@ -664,11 +759,9 @@
 
     postBtn.addEventListener("click", async () => {
       const t = totals();
-      const units = {};
-      Object.keys(UNITS).forEach((u) => { units[u] = unitSolved(u).done; });
       postBtn.disabled = true;
       try {
-        await db.doc("board/" + uid).set({ solved: t.solved, total: t.total, answered: t.answered, correct: t.correct, units, updatedAt: Date.now() });
+        await db.doc("board/" + uid).set({ answered: t.answered, correct: t.correct, mastered: t.mastered, topics: t.topics, updatedAt: Date.now() });
         msg.textContent = "Posted. Everyone who opens this page can see it.";
       } catch (e) {
         msg.textContent = e && e.code === "invalid_argument"
@@ -695,7 +788,7 @@
 
   // =====================================================================
   document.addEventListener("keydown", (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || $("#app").hidden) return;
     const tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     if (!document.querySelector(".choice")) return;
@@ -704,20 +797,48 @@
     else if (e.key === "Enter" && state.picked !== null && tag !== "BUTTON") { next(); e.preventDefault(); }
   });
 
-  $("#clearFocus").addEventListener("click", () => { state.focus.clear(); persistPrefs(); renderControls(); });
-  $("#unlockAll").addEventListener("click", () => { state.locked.clear(); persistPrefs(); renderControls(); });
-  $("#startBtn").addEventListener("click", () => startSet());
+  let started = false;
+  function startApp(email, u) {
+    if (started) return;
+    started = true;
+    account = { email, first: u.first, last: u.last };
+    STORE_KEY = "precalc-progress-v3:" + email;
+    store = readJSON(STORE_KEY, {});
+    store.stats = store.stats || {};
+    store.topics = store.topics || {};
+    store.prefs = store.prefs || {};
+    const p = store.prefs;
+    state.units = new Set((p.units || [1, 2, 3]).filter((x) => UNITS[x]));
+    if (!state.units.size) [1, 2, 3].forEach((x) => state.units.add(x));
+    state.calc = p.calc || "all";
+    state.len = [10, 20, 40].includes(p.len) ? p.len : 10;
+    state.locked = new Set((p.locked || []).filter((k) => allKeys.includes(k)));
+    state.focus = new Set((p.focus || []).filter((k) => allKeys.includes(k)));
+    state.view = p.view === "accuracy" ? "accuracy" : "mastery";
 
-  try {
-    const saved = store.prefs.topicsOpen;
-    $("#topicsBox").open = saved != null ? saved : !window.matchMedia("(max-width: 640px)").matches;
-  } catch {}
-  $("#topicsBox").addEventListener("toggle", () => { store.prefs.topicsOpen = $("#topicsBox").open; saveStore(); });
+    $("#auth").hidden = true; $("#app").hidden = false; $("#userArea").hidden = false;
+    $("#userName").textContent = `${u.first} ${u.last}`;
+    $("#welcomeName").textContent = u.first;
 
-  renderControls();
-  renderMastery();
-  startSet();
-  initBoard();
+    const box = $("#topicsBox");
+    box.open = !!p.topicsOpen;
+    box.addEventListener("toggle", () => { store.prefs.topicsOpen = box.open; saveStore(); });
+    $("#clearFocus").addEventListener("click", () => { state.focus.clear(); persistPrefs(); renderControls(); });
+    $("#unlockAll").addEventListener("click", () => { state.locked.clear(); persistPrefs(); renderControls(); });
+    $("#startBtn").addEventListener("click", () => startSet());
+    $("#logoutBtn").addEventListener("click", logOut);
+
+    renderControls();
+    renderProgress();
+    startSet();
+    initBoard();
+    window.scrollTo(0, 0);
+  }
+
+  // Boot: go straight in if this browser is logged in, otherwise show sign-up / log-in.
+  const sessionEmail = lsGet(SESSION_KEY), sessionUser = sessionEmail && users()[sessionEmail];
+  if (sessionUser) startApp(sessionEmail, sessionUser);
+  else showAuth(Object.keys(users()).length ? "login" : "signup");
 
   window.__precalc = { checkStep, compile, pretty };
 })();

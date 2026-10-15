@@ -190,8 +190,11 @@
   const readJSON = (k, fallback) => { try { return JSON.parse(lsGet(k)) || fallback; } catch { return fallback; } };
 
   // =====================================================================
-  // Accounts. There is no server, so accounts live in this browser.
-  // Passwords are stored only as salted PBKDF2 hashes.
+  // Accounts.
+  // Cloud mode (firebase-config.js filled in): Firebase Authentication + Firestore,
+  // so an account and its progress work on any device.
+  // Local mode (no config, or Firebase unreachable): accounts live in this browser,
+  // with passwords stored only as salted PBKDF2 hashes.
   // =====================================================================
   const USERS_KEY = "precalc-accounts-v1", SESSION_KEY = "precalc-session-v1";
   const toHex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -205,7 +208,76 @@
   const normEmail = (e) => e.trim().toLowerCase();
   const users = () => readJSON(USERS_KEY, {});
 
+  // ---- Firebase (cloud mode) ----
+  const FB_VERSION = "10.12.2";
+  let cloud = null, progressRef = null, signingUp = false;
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  async function initCloud() {
+    const cfg = window.FIREBASE_CONFIG;
+    if (!cfg || !cfg.apiKey || !cfg.projectId) return null;
+    const base = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
+    const load = (async () => {
+      await loadScript(base + "firebase-app-compat.js");
+      await Promise.all([loadScript(base + "firebase-auth-compat.js"), loadScript(base + "firebase-firestore-compat.js")]);
+      const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+      return { auth: app.auth(), db: app.firestore() };
+    })();
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 10000));
+    try { return await Promise.race([load, timeout]); } catch { return null; }
+  }
+  const SAME = "That email and password don't match an account. Check them and try again.";
+  const FB_ERR = {
+    "auth/email-already-in-use": "An account with this email already exists. Log in instead.",
+    "auth/invalid-email": "Enter a valid email address, like name@school.org.",
+    "auth/weak-password": "Choose a stronger password with at least 8 characters.",
+    "auth/invalid-credential": SAME, "auth/invalid-login-credentials": SAME, "auth/wrong-password": SAME, "auth/user-not-found": SAME,
+    "auth/missing-password": "Enter your password.",
+    "auth/too-many-requests": "Too many attempts. Wait a few minutes, then try again.",
+    "auth/network-request-failed": "Can't reach the server. Check your internet connection and try again.",
+    "auth/operation-not-allowed": "Email sign-in isn't turned on for this site yet. The site owner needs to enable it in Firebase.",
+    "permission-denied": "Your account works, but the progress database refused access. The site owner needs to publish the Firestore rules."
+  };
+  const fbMsg = (e) => FB_ERR[e && e.code] || "Something went wrong. Try again in a moment.";
+
+  function setBusy(form, busy) {
+    const b = form.querySelector("button[type=submit]");
+    if (!b) return;
+    if (busy) { b.dataset.label = b.textContent; b.textContent = "Please wait…"; b.disabled = true; }
+    else { b.textContent = b.dataset.label || b.textContent; b.disabled = false; }
+  }
+
+  async function enterCloud(user, profile) {
+    try {
+      const uref = cloud.db.collection("users").doc(user.uid);
+      progressRef = cloud.db.collection("progress").doc(user.uid);
+      let prof = profile;
+      if (!prof) { const snap = await uref.get(); prof = snap.exists ? snap.data() : null; }
+      if (!prof) {
+        const [first, ...rest] = (user.displayName || "Student").split(" ");
+        prof = { first, last: rest.join(" "), email: user.email };
+      }
+      const ps = await progressRef.get();
+      // First cloud login: carry over progress from a browser-only account with the same email.
+      const data = ps.exists ? ps.data() : readJSON("precalc-progress-v3:" + normEmail(user.email), {});
+      startApp(user.email, prof, data);
+      if (!ps.exists) saveStore();
+    } catch (e) {
+      progressRef = null;
+      showAuth("login");
+      authError(fbMsg(e));
+      try { await cloud.auth.signOut(); } catch {}
+    }
+  }
+
+  // ---- Auth screen ----
   function showAuth(mode) {
+    $("#booting").hidden = true;
     $("#auth").hidden = false; $("#app").hidden = true;
     const signup = mode !== "login";
     $("#signupForm").hidden = !signup; $("#loginForm").hidden = signup;
@@ -215,6 +287,7 @@
     if (first) first.focus();
   }
   function authError(msg) { const el = $("#authMsg"); el.textContent = msg; el.className = "auth-msg bad"; }
+  function authNote(msg) { const el = $("#authMsg"); el.textContent = msg; el.className = "auth-msg good"; }
 
   $("#tabSignup").addEventListener("click", () => showAuth("signup"));
   $("#tabLogin").addEventListener("click", () => showAuth("login"));
@@ -223,10 +296,25 @@
 
   $("#signupForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.currentTarget;
     const first = $("#suFirst").value.trim(), last = $("#suLast").value.trim(), email = normEmail($("#suEmail").value), pw = $("#suPass").value;
     if (!first || !last) return authError("Enter your first and last name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authError("Enter a valid email address, like name@school.org.");
     if (pw.length < 8) return authError("Use a password with at least 8 characters.");
+
+    if (cloud) {
+      setBusy(form, true); signingUp = true;
+      try {
+        const cred = await cloud.auth.createUserWithEmailAndPassword(email, pw);
+        await cred.user.updateProfile({ displayName: `${first} ${last}` });
+        const profile = { first, last, email, created: Date.now() };
+        await cloud.db.collection("users").doc(cred.user.uid).set(profile);
+        await enterCloud(cred.user, profile);
+      } catch (err) { authError(fbMsg(err)); }
+      signingUp = false; setBusy(form, false);
+      return;
+    }
+
     const all = users();
     if (all[email]) return authError("An account with this email already exists on this device. Log in instead.");
     try {
@@ -240,7 +328,16 @@
 
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const email = normEmail($("#liEmail").value), pw = $("#liPass").value, u = users()[email];
+    const form = e.currentTarget;
+    const email = normEmail($("#liEmail").value), pw = $("#liPass").value;
+    if (cloud) {
+      setBusy(form, true);
+      try { await cloud.auth.signInWithEmailAndPassword(email, pw); }   // onAuthStateChanged takes it from here
+      catch (err) { authError(fbMsg(err)); }
+      setBusy(form, false);
+      return;
+    }
+    const u = users()[email];
     if (!u) return authError("No account with that email on this device. Check the spelling or sign up.");
     let ok = false;
     try { ok = (await hashPassword(pw, u.salt)) === u.hash; } catch { return authError("This browser can't check passwords. Open the site over https in an up-to-date browser."); }
@@ -249,8 +346,17 @@
     startApp(email, u);
   });
 
-  function logOut() {
+  $("#forgotBtn").addEventListener("click", async () => {
+    const email = normEmail($("#liEmail").value);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authError("Type your email above, then choose “Forgot password?” again.");
+    try { await cloud.auth.sendPasswordResetEmail(email); authNote("If there's an account for that email, a password reset link is on its way. Check your inbox and spam folder."); }
+    catch (err) { authError(err && err.code === "auth/user-not-found" ? "If there's an account for that email, a password reset link is on its way." : fbMsg(err)); }
+  });
+
+  async function logOut() {
+    await flushCloud();
     lsDel(SESSION_KEY);
+    if (cloud) { try { await cloud.auth.signOut(); } catch {} }
     try { location.reload(); } catch { showAuth("login"); }
   }
 
@@ -261,7 +367,18 @@
   const state = { units: new Set(), calc: "all", len: 10, locked: new Set(), focus: new Set(), view: "mastery",
     set: [], idx: 0, picked: null, order: [], results: [], steps: null };
 
-  function saveStore() { lsSet(STORE_KEY, JSON.stringify(store)); }
+  // Progress is cached in this browser and, in cloud mode, synced to Firestore shortly after each change.
+  let syncTimer = null;
+  function saveStore() {
+    lsSet(STORE_KEY, JSON.stringify(store));
+    if (progressRef) { clearTimeout(syncTimer); syncTimer = setTimeout(flushCloud, 1500); }
+  }
+  async function flushCloud() {
+    clearTimeout(syncTimer); syncTimer = null;
+    if (!progressRef || !store) return;
+    try { await progressRef.set({ stats: store.stats, topics: store.topics, prefs: store.prefs, updatedAt: Date.now() }); } catch {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && syncTimer) flushCloud(); });
   function persistPrefs() {
     store.prefs = { ...store.prefs, units: [...state.units], calc: state.calc, len: state.len, locked: [...state.locked], focus: [...state.focus], view: state.view };
     saveStore();
@@ -798,12 +915,13 @@
   });
 
   let started = false;
-  function startApp(email, u) {
+  function startApp(email, u, data) {
     if (started) return;
     started = true;
+    lsSet("precalc-returning", "1");
     account = { email, first: u.first, last: u.last };
-    STORE_KEY = "precalc-progress-v3:" + email;
-    store = readJSON(STORE_KEY, {});
+    STORE_KEY = "precalc-progress-v3:" + normEmail(email);
+    store = data || readJSON(STORE_KEY, {});
     store.stats = store.stats || {};
     store.topics = store.topics || {};
     store.prefs = store.prefs || {};
@@ -816,7 +934,7 @@
     state.focus = new Set((p.focus || []).filter((k) => allKeys.includes(k)));
     state.view = p.view === "accuracy" ? "accuracy" : "mastery";
 
-    $("#auth").hidden = true; $("#app").hidden = false; $("#userArea").hidden = false;
+    $("#booting").hidden = true; $("#auth").hidden = true; $("#app").hidden = false; $("#userArea").hidden = false;
     $("#userName").textContent = `${u.first} ${u.last}`;
     $("#welcomeName").textContent = u.first;
 
@@ -835,10 +953,23 @@
     window.scrollTo(0, 0);
   }
 
-  // Boot: go straight in if this browser is logged in, otherwise show sign-up / log-in.
-  const sessionEmail = lsGet(SESSION_KEY), sessionUser = sessionEmail && users()[sessionEmail];
-  if (sessionUser) startApp(sessionEmail, sessionUser);
-  else showAuth(Object.keys(users()).length ? "login" : "signup");
+  // Boot: use Firebase when it's configured and reachable, otherwise browser-only accounts.
+  (async () => {
+    cloud = await initCloud();
+    if (cloud) {
+      $("#forgotBtn").hidden = false;
+      $("#authNote").textContent = "Your account works on any device. Log in with the same email and password.";
+      cloud.auth.onAuthStateChanged((user) => {
+        if (started || signingUp) return;
+        if (user) enterCloud(user);
+        else showAuth(lsGet("precalc-returning") ? "login" : "signup");
+      });
+      return;
+    }
+    const sessionEmail = lsGet(SESSION_KEY), sessionUser = sessionEmail && users()[sessionEmail];
+    if (sessionUser) startApp(sessionEmail, sessionUser);
+    else showAuth(Object.keys(users()).length ? "login" : "signup");
+  })();
 
   window.__precalc = { checkStep, compile, pretty };
 })();

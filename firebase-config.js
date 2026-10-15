@@ -13,4 +13,11 @@
 //
 // These values are meant to be public. Your Firestore security rules (firestore.rules) are what
 // keep each student's data private.
-window.FIREBASE_CONFIG = null;
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyARcBUycJmrpXdTglJsDCDGJht6VtAXg2Q",
+  authDomain: "precalc-98c5a.firebaseapp.com",
+  projectId: "precalc-98c5a",
+  storageBucket: "precalc-98c5a.firebasestorage.app",
+  messagingSenderId: "60959565894",
+  appId: "1:60959565894:web:2f63dd72b21edd6fd84247"
+};
